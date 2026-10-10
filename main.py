@@ -15,108 +15,105 @@ def run_server():
 
 threading.Thread(target=run_server, daemon=True).start()
 import os
-import yt_dlp
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-# Bu yerga BotFather'dan olgan tokeningizni yozing
-TOKEN = '8914594418:AAHygV6YTipGbO9x2eBW1LkC8zh6BQ_j7gs'
+# --- 1. WEB SERVER (Render uchun) ---
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"Bot 24/7 ishlamoqda!")
+
+def run_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
+    server.serve_forever()
+
+threading.Thread(target=run_server, daemon=True).start()
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Salom! Menga Instagram, TikTok yoki YouTube havolasini (link) yuboring, "
-        "men uni video yoki audio ko'rinishida yuklab beraman."
-    )
+# --- 2. TILLAR VA MATNLAR LUG'ATI ---
+TEXTS = {
+    'uz': {
+        'welcome': "Xush kelibsiz! Musiqa yoki video havolasini (link) yuboring:",
+        'downloading': "Yuklab olinmoqda, kuting...",
+        'lang_saved': "Til muvaffaqiyatli O'zbek tiliga o'zgartirildi! 🇺🇿"
+    },
+    'ru': {
+        'welcome': "Добро пожаловать! Отправьте ссылку на музыку или видео:",
+        'downloading': "Скачивается, подождите...",
+        'lang_saved': "Язык успешно изменен на Русский! 🇷🇺"
+    },
+    'en': {
+        'welcome': "Welcome! Send a link to music or video:",
+        'downloading': "Downloading, please wait...",
+        'lang_saved': "Language successfully set to English! 🇬🇧"
+    }
+}
+
+# Foydalanuvchilar tanlagan tilni saqlash xotirasi
+user_languages = {}
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text.strip()
+# --- 3. BOT BUYRUKLARI (HANDLERS) ---
 
-    # Havolani to'g'riligini tekshirish
-    if not (url.startswith("http://") or url.startswith("https://")):
-        await update.message.reply_text("Iltimos, to'g'ri havola (link) yuboring!")
-        return
-
-    # Havolani vaqtincha xotirada saqlaymiz
-    context.user_data['last_url'] = url
-
-    # Format tanlash tugmalari
+# /start bosilganda til tanlash tugmalarini ko'rsatish
+async def start(update: Update, context):
     keyboard = [
         [
-            InlineKeyboardButton("🎬 Video", callback_data="dl_video"),
-            InlineKeyboardButton("🎵 Audio", callback_data="dl_audio")
+            InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data='lang_uz'),
+            InlineKeyboardButton("🇷🇺 Русский", callback_data='lang_ru'),
+            InlineKeyboardButton("🇬🇧 English", callback_data='lang_en')
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     await update.message.reply_text(
-        "Nimani yuklab olmoqchisiz? Tanlang:",
+        "Iltimos, tilni tanlang / Пожалуйста, выберите язык / Please select a language:",
         reply_markup=reply_markup
     )
 
-
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Tugma bosilganda tilni saqlash va salomlashish
+async def button_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
+    
+    user_id = query.from_user.id
+    
+    if query.data.startswith('lang_'):
+        lang = query.data.split('_')[1]  # 'uz', 'ru' yoki 'en'
+        user_languages[user_id] = lang   # Foydalanuvchi tilini xotiraga yozamiz
+        
+        # Tanlangan dilda javob berish
+        await query.edit_message_text(text=TEXTS[lang]['welcome'])
 
-    download_type = query.data
-    url = context.user_data.get('last_url')
+# Foydalanuvchi havola (link) yuborganda
+async def handle_message(update: Update, context):
+    user_id = update.effective_user.id
+    # Agar foydalanuvchi til tanlamagan bo'lsa, avtomatik 'uz' qilamiz
+    lang = user_languages.get(user_id, 'uz')
+    
+    # Botingizning yuklab olish kodi shu yerda bo'ladi:
+    await update.message.reply_text(TEXTS[lang]['downloading'])
+    
+    # ... Bu yerda yt_dlp yoki boshqa yuklash kodingiz davom etadi ...
 
-    if not url:
-        await query.edit_message_text("Xatolik: Havola topilmadi. Qaytadan link yuboring.")
-        return
 
-    await query.edit_message_text("Fayl yuklab olinmoqda, kuting...")
-
-    try:
-        out_pattern = f"download_{query.from_user.id}.%(ext)s"
-
-        # FFmpeg talab qilmaydigan sozlamalar
-        if download_type == "dl_video":
-            ydl_opts = {
-                'format': 'b[ext=mp4]/best[ext=mp4]/best',
-                'outtmpl': out_pattern,
-                'quiet': True
-            }
-        else:  # dl_audio
-            ydl_opts = {
-                'format': 'ba/best',
-                'outtmpl': out_pattern,
-                'quiet': True
-            }
-
-        # Faylni yuklab olish
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-
-        # Telegramga yuborish
-        await query.message.reply_text("Fayl tayyor! Yuborilmoqda...")
-        with open(filename, 'rb') as file:
-            if download_type == "dl_video":
-                await context.bot.send_video(chat_id=query.message.chat_id, video=file)
-            else:
-                await context.bot.send_audio(chat_id=query.message.chat_id, audio=file)
-
-        # Vaqtinchalik faylni o'chirish
-        if os.path.exists(filename):
-            os.remove(filename)
-
-    except Exception as e:
-        await query.message.reply_text(f"Xatolik yuz berdi: {str(e)}")
-
+# --- 4. BOTNI ISHGA TUSHIRISH ---
+TOKEN = '8914594418:AAHygV6YT1pGb09x2eBM1LkC8zh6BQ_j7gs' # O'zingizning tokeningiz
 
 def main():
     app = Application.builder().token(TOKEN).build()
-
+    
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(button_callback))
-
-    print("Bot ishga tushdi...")
+    
     app.run_polling()
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
