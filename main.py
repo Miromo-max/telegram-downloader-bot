@@ -1,11 +1,10 @@
-
 import os
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-# --- 1. WEB SERVER (Render uchun) ---
+# --- 1. WEB SERVER (Render uchun 24/7 ishlashi uchun) ---
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -24,29 +23,23 @@ threading.Thread(target=run_server, daemon=True).start()
 # --- 2. TILLAR VA MATNLAR LUG'ATI ---
 TEXTS = {
     'uz': {
-        'welcome': "Xush kelibsiz! Musiqa yoki video havolasini (link) yuboring:",
-        'downloading': "Yuklab olinmoqda, kuting...",
-        'lang_saved': "Til muvaffaqiyatli O'zbek tiliga o'zgartirildi! 🇺🇿"
+        'welcome': "Xush kelibsiz! Musiqa yoki video havolasini yuboring:",
+        'downloading': "Yuklab olinmoqda, kuting..."
     },
     'ru': {
         'welcome': "Добро пожаловать! Отправьте ссылку на музыку или видео:",
-        'downloading': "Скачивается, подождите...",
-        'lang_saved': "Язык успешно изменен на Русский! 🇷🇺"
+        'downloading': "Скачивается, подождите..."
     },
     'en': {
         'welcome': "Welcome! Send a link to music or video:",
-        'downloading': "Downloading, please wait...",
-        'lang_saved': "Language successfully set to English! 🇬🇧"
+        'downloading': "Downloading, please wait..."
     }
 }
 
-# Foydalanuvchilar tanlagan tilni saqlash xotirasi
 user_languages = {}
 
 
-# --- 3. BOT BUYRUKLARI (HANDLERS) ---
-
-# /start bosilganda til tanlash tugmalarini ko'rsatish
+# --- 3. BOT BUYRUKLARI ---
 async def start(update: Update, context):
     keyboard = [
         [
@@ -62,7 +55,6 @@ async def start(update: Update, context):
         reply_markup=reply_markup
     )
 
-# Tugma bosilganda tilni saqlash va salomlashish
 async def button_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
@@ -70,26 +62,20 @@ async def button_handler(update: Update, context):
     user_id = query.from_user.id
     
     if query.data.startswith('lang_'):
-        lang = query.data.split('_')[1]  # 'uz', 'ru' yoki 'en'
-        user_languages[user_id] = lang   # Foydalanuvchi tilini xotiraga yozamiz
+        lang = query.data.split('_')[1]
+        user_languages[user_id] = lang
         
-        # Tanlangan dilda javob berish
         await query.edit_message_text(text=TEXTS[lang]['welcome'])
 
-# Foydalanuvchi havola (link) yuborganda
 async def handle_message(update: Update, context):
     user_id = update.effective_user.id
-    # Agar foydalanuvchi til tanlamagan bo'lsa, avtomatik 'uz' qilamiz
     lang = user_languages.get(user_id, 'uz')
     
-    # Botingizning yuklab olish kodi shu yerda bo'ladi:
     await update.message.reply_text(TEXTS[lang]['downloading'])
-    
-    # ... Bu yerda yt_dlp yoki boshqa yuklash kodingiz davom etadi ...
 
 
 # --- 4. BOTNI ISHGA TUSHIRISH ---
-TOKEN = '8914594418:AAHygV6YT1pGb09x2eBM1LkC8zh6BQ_j7gs' # O'zingizning tokeningiz
+TOKEN = '8914594418:AAHygV6YT1pGb09x2eBM1LkC8zh6BQ_j7gs'
 
 def main():
     app = Application.builder().token(TOKEN).build()
