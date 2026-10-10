@@ -75,7 +75,7 @@ async def handle_message(update: Update, context):
 
 
 # --- 4. BOTNI ISHGA TUSHIRISH ---
-TOKEN = '8914594418:AAHygV6YT1pGb09x2eBM1LkC8zh6BQ_j7gs'
+TOKEN = '8914594418:AAHygV6YTipGbO9x2eBW1LkC8zh6BQ_j7gs'
 
 def main():
     app = Application.builder().token(TOKEN).build()
